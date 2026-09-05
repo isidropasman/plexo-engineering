@@ -1,110 +1,182 @@
-# Architecture
+# Plexo Architecture
 
-Plexo's core engineering problem is not transcription. It is turning many subjective conversations into a structured model of how a company actually operates without flattening disagreement or letting an LLM invent connective tissue.
+Plexo turns many subjective conversations into an evidence-backed operational model. The architecture is deliberately staged because interviewing, extraction, evidence checking, reconciliation and reporting have different failure modes.
 
-The production system is larger than this public repository. This document describes the architectural principles behind it using sanitized examples.
+The important architectural shift is to stop thinking of this as a one-way `transcript → report` pipeline. Structured artifacts let later evidence feed back into the operational context.
 
-## Pipeline
+## System view
 
 ```mermaid
-flowchart LR
-    A[Voice interview] --> B[Normalized transcript]
-    B --> C[Evidence extraction]
-    C --> D[Deterministic validation]
-    D --> E[Typed claims]
-    E --> F[Authority derivation]
-    F --> G[Cross-interview synthesis]
-    G --> H[Process model]
-    H --> I[Bottlenecks / gaps / opportunities]
+flowchart TD
+    subgraph Interview[Interview Layer]
+      V[Realtime voice interview]
+      IS[Structured interview state]
+      V --> IS
+    end
+
+    subgraph Evidence[Evidence Layer]
+      N[Normalized transcript + quote IDs]
+      EX[Evidence extraction]
+      DV[Deterministic validation]
+      N --> EX --> DV
+    end
+
+    subgraph Context[Operational Context]
+      TC[Typed claims]
+      AU[Contextual authority]
+      CO[Conflicts / uncertainty]
+      TC --> AU --> CO
+    end
+
+    subgraph Synthesis[Cross-Interview Engine]
+      CS[Consensus + disagreement]
+    end
+
+    subgraph Model[Operational Model]
+      PR[Processes]
+      BO[Bottlenecks]
+      OPP[Opportunities]
+    end
+
+    IS --> N
+    DV --> TC
+    CO --> CS
+    CS --> PR
+    CS --> BO
+    CS --> OPP
+    CO -. future context-informed investigation .-> IS
+
+    EV[Voice traces · pipeline evals · E2E tests] -. observes .-> Interview
+    EV -. observes .-> Evidence
+    EV -. observes .-> Context
 ```
 
-Each boundary produces a typed artifact. Downstream stages consume those artifacts instead of relying on an ever-growing chat transcript.
+The solid path represents the production-backed flow. The feedback arrow represents the direction we are building toward: accumulated context should increasingly determine what is worth asking or verifying next.
 
-## 1. Voice interview → normalized transcript
+## 1. Interview layer
 
-The interview layer collects operational knowledge from people who perform, own, approve, or receive work. Raw conversation is normalized into stable quote IDs so later stages can point back to exact evidence.
+The interview is not just audio collection. Plexo maintains structured state during the conversation so the system can track progress through the interview rather than relying only on a final transcript.
 
-That quote identity is important: a conclusion should remain auditable after several agent stages.
+Voice introduces its own state-machine failures: interruption, silence, pause/resume, premature turn-taking, truncated responses and provider outages. Those failures are evaluated separately from semantic answer quality.
 
-## 2. Evidence extraction
+## 2. Normalized evidence
 
-The extraction agent proposes atomic claims such as:
+The transcript is normalized into evidence with stable quote references. This creates an addressable evidence layer for downstream extraction.
 
-- how a process is intended to work,
-- how it actually works,
+The boundary matters: downstream claims refer to quotes instead of copying or paraphrasing evidence with no provenance.
+
+## 3. Extraction proposes claims
+
+An LLM proposes typed operational claims such as:
+
+- actual process,
+- intended process,
+- bottleneck,
 - manual work,
-- bottlenecks,
-- handoffs,
-- metrics,
+- handoff,
+- metric,
 - process ownership.
 
-The key design choice is that the model proposes structured data; it does not get final authority over whether the evidence is admissible.
+The extraction layer is explicitly instructed to treat transcript content as data, not instructions. But prompt instructions alone are not considered a sufficient reliability boundary.
 
-## 3. Deterministic validation
+## 4. Deterministic evidence validation
 
-Before a proposed claim enters the operational model, code validates it.
+Code validates structural/evidence invariants after extraction.
 
-Examples of checks used by the real system include:
+Examples include:
 
 - referenced quote IDs must exist,
-- a claim cannot survive without direct evidence,
-- assent-only answers such as “yes, exactly” are not treated as evidence for substance introduced by the interviewer,
-- uncertain quantified claims can be rejected,
-- hearsay from a source far from the work is treated differently from a specific first-hand example,
-- vague evidence caps confidence.
+- process-owner claims need process identity,
+- assent-only answers are not treated as substantive evidence,
+- uncertainty and hearsay affect admissibility/confidence,
+- distant weak sources should not become strong claims about observed reality.
 
-A simplified public version is in [`src/evidence-pipeline/claim-validation.ts`](../src/evidence-pipeline/claim-validation.ts).
+This is the core principle:
 
-This split gives us a useful rule:
+> **LLMs propose; code validates.**
 
-> **LLMs propose. Code validates.**
+See [`../src/evidence-pipeline/claim-validation.ts`](../src/evidence-pipeline/claim-validation.ts).
 
-## 4. Authority is contextual
+## 5. Contextual authority
 
-A participant should not receive one global authority score.
+There is no single global `authorityScore(person)`.
 
-The same person may own invoicing, execute purchasing, and only observe logistics. Authority therefore needs to be derived at the **participant × process × claim** level.
+Someone may know the intended policy because they own a process while an operator is the better source for what actually happens every day.
 
-Plexo combines signals such as declared process role, seniority, proximity to the work, and the type of claim being made. A simplified example is in [`src/evidence-pipeline/authority.ts`](../src/evidence-pipeline/authority.ts).
+The useful abstraction is closer to:
 
-## 5. Intended process ≠ operational reality
+```text
+authority(participant, process, claim relationship)
+```
 
-This is one of the most important distinctions in the system.
+The production logic combines process context, intended-vs-reality relationship and declared process role. This replaced an earlier over-reliance on seniority.
 
-A manager might accurately describe the approved process while an operator accurately describes what happens every day. Those statements are not necessarily mutually exclusive; they can expose a design-vs-reality gap.
-
-Plexo keeps these evidence classes separate through extraction and synthesis so disagreement can become an explicit artifact instead of being averaged away.
-
-See the synthetic example:
-
-- [`interview-input.json`](../examples/interview-input.json)
-- [`extracted-claims.json`](../examples/extracted-claims.json)
-- [`synthesized-output.json`](../examples/synthesized-output.json)
+See [`../src/evidence-pipeline/authority.ts`](../src/evidence-pipeline/authority.ts) and [`things-we-got-wrong.md`](things-we-got-wrong.md).
 
 ## 6. Cross-interview synthesis
 
-Only after claims have evidence and source metadata does synthesis reason across interviews.
+Once claims have evidence and authority metadata, synthesis can compare interviews without pretending every statement has equal epistemic weight.
 
-The synthesis layer can ask questions such as:
+The system can preserve:
 
-- Do multiple operators describe the same workaround?
-- Does the intended process differ from observed execution?
-- Is a bottleneck supported by first-hand evidence or repeated hearsay?
-- Are two names actually referring to the same process or tool?
-- Which claims should remain unresolved because evidence conflicts?
+- agreement,
+- intended vs observed divergence,
+- source disagreement,
+- uncertainty that should not be collapsed into a confident conclusion.
 
-The output is a structured operational model that can support process maps, bottleneck analysis, opportunity discovery, and eventually agent execution.
+Contradiction is often the finding.
+
+## 7. Operational artifacts
+
+Downstream analysis and reports are built from structured artifacts rather than directly from raw transcripts. This makes the boundaries inspectable and gives us places to reject or evaluate bad intermediate outputs.
+
+The report is therefore a projection of the operational model, not the model itself.
 
 ## Why not one giant agent?
 
-A single model call is simpler to demo but harder to trust.
+A single large agent is attractive because orchestration is simpler. It is also difficult to inspect.
 
-Splitting the system into stages gives us:
+If one call interviews, extracts, resolves contradictions, assigns authority, ranks bottlenecks and writes prose, a wrong conclusion has no useful fault boundary.
 
-1. **Auditability** — conclusions retain links to source evidence.
-2. **Testability** — extraction, validation, authority, and synthesis can fail independently and be evaluated independently.
-3. **Determinism where it matters** — schema checks and evidence gates do not depend on another probabilistic judgment.
-4. **Better failure analysis** — we can distinguish bad interviewing from bad extraction from bad synthesis.
-5. **Safer iteration** — changing one agent does not require rewriting the entire reasoning chain.
+With bounded stages we can ask:
 
-The result is less magical than an opaque end-to-end prompt, and deliberately so. For operational intelligence, being able to explain *why the system believes something* is part of the product.
+```text
+Was the quote wrong?
+Was the claim unsupported?
+Was confidence miscalibrated?
+Was the wrong source treated as authoritative?
+Was synthesis wrong despite valid inputs?
+Was the final presentation wrong?
+```
+
+That is more code and more contracts. The trade-off is worth it because failures become localizable and evaluable.
+
+## Current system vs next architecture
+
+### Production-backed
+
+- structured interview state,
+- quote-addressable evidence,
+- typed claim extraction,
+- deterministic evidence validation,
+- process/claim-aware authority,
+- cross-interview synthesis,
+- preservation of intended-vs-observed disagreement,
+- structured downstream artifacts,
+- voice traces, pipeline evals and E2E testing.
+
+### Architectural direction
+
+- explicit unknowns as durable state,
+- task-scoped context views,
+- accumulated context selecting the next best question/investigation,
+- operational outcomes feeding back into the company model.
+
+The distinction is intentional. This repository is meant to show engineering reasoning, not pretend future work is already shipped.
+
+## Deeper reading
+
+- [`context-engine.md`](context-engine.md) — how we think about evolving company context
+- [`reliability.md`](reliability.md) — evidence and voice reliability
+- [`decisions/`](decisions/001-multi-agent-boundaries.md) — architecture decisions and trade-offs
+- [`things-we-got-wrong.md`](things-we-got-wrong.md) — measured failures that changed the design
