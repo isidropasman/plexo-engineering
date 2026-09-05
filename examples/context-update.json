@@ -1,0 +1,55 @@
+{
+  "scenario": "Synthetic purchase-approval example — no customer data",
+  "before": {
+    "process": "Purchase approval",
+    "claims": [
+      {
+        "id": "claim-intended-1",
+        "relationship": "intended",
+        "text": "Finance approval should happen before a purchase order is created.",
+        "quoteIds": ["q-manager-1"],
+        "confidence": 0.9
+      }
+    ],
+    "conflicts": []
+  },
+  "newEvidence": {
+    "participant": {
+      "id": "operator-1",
+      "declaredRole": "executor"
+    },
+    "quote": {
+      "id": "q-operator-1",
+      "text": "For urgent requests we usually create the order first and get Finance approval afterwards."
+    },
+    "proposedClaim": {
+      "id": "claim-observed-1",
+      "relationship": "reality",
+      "text": "Urgent purchase orders can be created before Finance approval.",
+      "quoteIds": ["q-operator-1"],
+      "confidence": 0.88
+    }
+  },
+  "decision": {
+    "action": "preserve_conflict",
+    "reason": "The new evidence describes observed execution while the existing claim describes intended policy; overwriting either would destroy useful operational information."
+  },
+  "after": {
+    "process": "Purchase approval",
+    "claims": [
+      "claim-intended-1",
+      "claim-observed-1"
+    ],
+    "conflicts": [
+      {
+        "type": "intended_vs_observed",
+        "claimIds": ["claim-intended-1", "claim-observed-1"],
+        "status": "preserved"
+      }
+    ],
+    "nextInvestigation": {
+      "status": "architectural_direction",
+      "question": "Under which conditions are urgent orders allowed to bypass prior approval?"
+    }
+  }
+}
