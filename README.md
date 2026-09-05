@@ -90,6 +90,23 @@ The feedback arrow matters more than the pipeline. The goal is not `interview �
 
 ![Architectural Direction](https://img.shields.io/badge/ARCHITECTURAL_DIRECTION-BF8700?style=flat-square) **Direction:** increasingly use accumulated context, explicit unknowns and unresolved conflicts to decide what the system should investigate next.
 
+## 🧰 Production stack
+
+The stack is intentionally conventional. The engineering is in the system around it: typed agent boundaries, evidence provenance, deterministic validation, contextual authority, conflict preservation, voice reliability and evals.
+
+| Layer | Production tooling |
+|---|---|
+| Product | `Next.js 15` · `React 19` · `TypeScript` · `Tailwind CSS 4` |
+| AI | `Anthropic SDK` · typed structured outputs with `Zod` |
+| Realtime voice | `LiveKit Agents` · `ElevenLabs` · provider benchmarking + fallback |
+| Data | `PostgreSQL` on `Neon` · `Drizzle ORM` |
+| Orchestration | `Inngest` · explicit multi-stage agent contracts |
+| Product analytics | `PostHog` |
+| Reliability | `Vitest` · `Playwright` · deterministic voice trace evals · E2E interviews |
+| Tooling | `Turbopack` · `ESLint` · `Prettier` · TypeScript typechecking |
+
+**The tools are not the architecture.** We use probabilistic models where judgment is useful and deterministic code where invariants can be enforced.
+
 ## 🟣 How context evolves
 
 Suppose one manager says the intended purchase-approval process takes 20 minutes. An operator says the real process regularly takes two hours because approvals bounce between teams.
