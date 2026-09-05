@@ -1,5 +1,9 @@
 # Plexo — Engineering Deep Dive
 
+![Context Engine](https://img.shields.io/badge/CONTEXT_ENGINE-6D5DFC?style=for-the-badge)
+![Production Backed](https://img.shields.io/badge/PRODUCTION--BACKED-1F883D?style=for-the-badge)
+![Voice + Evals](https://img.shields.io/badge/VOICE_+_EVALS-6D5DFC?style=for-the-badge)
+
 > **Building a machine-readable model of how a company actually operates — from messy human conversations.**
 
 **Plexo is the product. The production codebase is private. This repository is my public technical case study of the architecture, failures, reliability systems, and selected sanitized implementations behind it.**
@@ -8,15 +12,18 @@ Plexo interviews people across a company and reconstructs processes, handoffs, b
 
 The interesting problem is not speech-to-text. It is not prompting. It is building a probabilistic system that can learn from many subjective sources without turning uncertainty into fake certainty.
 
-## The real product is context
+## 🟣 The real product is context
 
 Voice is how Plexo collects operational knowledge today. Reports are one way we deliver it.
 
 The durable technical asset sits in between: an **evolving operational context** that can retain evidence, provenance, confidence, contextual authority, and disagreement.
 
-> **Context is not a prompt.** It is structured state that can be inspected, challenged, updated, and reused.
+> ### 🟣 Context is not a prompt.
+> It is structured state that can be inspected, challenged, updated, and reused.
 
 Instead of treating every interview as an isolated transcript, the system turns conversations into evidence-backed artifacts. New information can strengthen what we know, contradict it, extend the model, change who is authoritative for a specific process, or remain unresolved.
+
+### System architecture
 
 ```mermaid
 flowchart LR
@@ -61,14 +68,29 @@ flowchart LR
     R["Reliability + Evals\nvoice traces · E2E · deterministic checks"] -. observes .-> I
     R -. observes .-> E
     R -. observes .-> C
+
+    classDef interview fill:#EEF2FF,stroke:#6D5DFC,color:#26233A,stroke-width:1.5px;
+    classDef evidence fill:#F3F0FF,stroke:#8B7CF6,color:#26233A,stroke-width:1.5px;
+    classDef context fill:#6D5DFC,stroke:#5145CD,color:#FFFFFF,stroke-width:2.5px;
+    classDef synthesis fill:#FFF8E6,stroke:#BF8700,color:#3B2F00,stroke-width:1.5px;
+    classDef model fill:#EAF7EE,stroke:#1F883D,color:#17351F,stroke-width:1.5px;
+    classDef reliability fill:#F6F8FA,stroke:#57606A,color:#24292F,stroke-dasharray: 5 3;
+
+    class V,S interview;
+    class Q,X,G evidence;
+    class CL,A,CF context;
+    class SY synthesis;
+    class P,B,OP model;
+    class R reliability;
 ```
 
 The feedback arrow matters more than the pipeline. The goal is not `interview → summary → report`. It is to build a representation that gets better as evidence accumulates.
 
-> **Current production foundation:** quote-backed claims, deterministic evidence validation, contextual authority, multi-stage synthesis, conflict preservation, structured interview state, voice traces and E2E evaluation.  
-> **Architectural direction:** increasingly use accumulated context, explicit unknowns and unresolved conflicts to decide what the system should investigate next.
+![Production Backed](https://img.shields.io/badge/PRODUCTION--BACKED-1F883D?style=flat-square) **Current foundation:** quote-backed claims, deterministic evidence validation, contextual authority, multi-stage synthesis, conflict preservation, structured interview state, voice traces and E2E evaluation.
 
-## How context evolves
+![Architectural Direction](https://img.shields.io/badge/ARCHITECTURAL_DIRECTION-BF8700?style=flat-square) **Direction:** increasingly use accumulated context, explicit unknowns and unresolved conflicts to decide what the system should investigate next.
+
+## 🟣 How context evolves
 
 Suppose one manager says the intended purchase-approval process takes 20 minutes. An operator says the real process regularly takes two hours because approvals bounce between teams.
 
@@ -93,11 +115,11 @@ When new evidence arrives, the useful outcomes are:
 
 | New evidence | Context behavior |
 |---|---|
-| Supports an existing claim | strengthen its evidence |
-| Disagrees with a claim | preserve a conflict |
-| Reveals something new | extend the model |
-| Comes from a better source for that process | reconsider contextual authority |
-| Is weak or ambiguous | retain uncertainty instead of manufacturing certainty |
+| ✅ Supports an existing claim | strengthen its evidence |
+| ⚡ Disagrees with a claim | preserve a conflict |
+| ➕ Reveals something new | extend the model |
+| 🎯 Comes from a better source for that process | reconsider contextual authority |
+| ? Is weak or ambiguous | retain uncertainty instead of manufacturing certainty |
 
 See the synthetic end-to-end example in [`examples/context-update.json`](examples/context-update.json) and the deeper model in [`docs/context-engine.md`](docs/context-engine.md).
 
@@ -125,23 +147,23 @@ A conclusion should be able to travel backwards:
 
 That property is why we prefer claims over transcript summaries. A summary is convenient for reading; it is a weak primitive for a system that needs to update and defend what it believes.
 
-## Hard engineering decisions
+## 🧠 Hard engineering decisions
 
 The stack is not the interesting part. These decisions are.
 
-| Decision | Why | Trade-off |
-|---|---|---|
-| [Bounded stages, not one giant agent](docs/decisions/001-multi-agent-boundaries.md) | Different stages fail differently and need independent evaluation | More contracts and orchestration |
-| [Claims, not summaries](docs/decisions/002-claims-not-summaries.md) | Preserve provenance and make knowledge composable | More structured state |
-| [LLMs propose; code validates](docs/decisions/003-llm-proposes-code-validates.md) | Deterministic invariants should not depend on another probabilistic call | Some useful weak evidence gets rejected |
-| [Authority is contextual](docs/decisions/004-contextual-authority.md) | Job title is not a reliable proxy for who knows how a process actually runs | Authority becomes process- and claim-dependent |
-| [Contradictions are data](docs/decisions/005-preserve-conflicts.md) | Intended and observed reality can both matter | Downstream synthesis must reason over disagreement |
-| [Structured, scoped context](docs/decisions/006-structured-scoped-context.md) | Context should be selected, not dumped into a prompt | Requires explicit context boundaries |
-| [Unknowns are first-class](docs/decisions/007-unknowns-first-class.md) | What we do not know can determine what to investigate next | Architectural direction; requires careful state design |
+| Decision | Status | Why | Trade-off |
+|---|---|---|---|
+| [Bounded stages, not one giant agent](docs/decisions/001-multi-agent-boundaries.md) | 🟢 Production-backed | Different stages fail differently and need independent evaluation | More contracts and orchestration |
+| [Claims, not summaries](docs/decisions/002-claims-not-summaries.md) | 🟢 Production-backed | Preserve provenance and make knowledge composable | More structured state |
+| [LLMs propose; code validates](docs/decisions/003-llm-proposes-code-validates.md) | 🟢 Production-backed | Deterministic invariants should not depend on another probabilistic call | Some useful weak evidence gets rejected |
+| [Authority is contextual](docs/decisions/004-contextual-authority.md) | 🟢 Production-backed | Job title is not a reliable proxy for who knows how a process actually runs | Authority becomes process- and claim-dependent |
+| [Contradictions are data](docs/decisions/005-preserve-conflicts.md) | 🟢 Production-backed | Intended and observed reality can both matter | Downstream synthesis must reason over disagreement |
+| [Structured, scoped context](docs/decisions/006-structured-scoped-context.md) | 🟠 Direction | Context should be selected, not dumped into a prompt | Requires explicit context boundaries |
+| [Unknowns are first-class](docs/decisions/007-unknowns-first-class.md) | 🟠 Direction | What we do not know can determine what to investigate next | Requires careful state design |
 
-## One rule that changed the architecture
+## 🟣 One rule that changed the architecture
 
-### LLMs propose. Code validates.
+> ### LLMs propose. Code validates.
 
 An extraction model may propose a perfectly plausible operational claim that nobody actually supported.
 
@@ -159,7 +181,7 @@ Accepted / rejected / confidence-adjusted claims
 
 **No evidence → no accepted claim.**
 
-## Things we got wrong
+## 🟠 Things we got wrong
 
 One of the best architecture changes came from measuring a bad assumption.
 
@@ -171,7 +193,7 @@ That matters because perfect extraction with the wrong authority model still cor
 
 [Read the failure story →](docs/things-we-got-wrong.md)
 
-## Voice reliability is a systems problem
+## 🟢 Voice reliability is a systems problem
 
 A voice agent can produce great text and still fail as a product.
 
