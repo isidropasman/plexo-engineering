@@ -1,0 +1,31 @@
+{
+  "process": "purchase approval",
+  "interviews": [
+    {
+      "participantId": "p-001",
+      "role": "Operations Manager",
+      "declaredProcessRole": "owner",
+      "quotes": [
+        {
+          "quoteId": "q-001",
+          "text": "Purchases above $5,000 are supposed to be approved by Operations before Finance receives them."
+        }
+      ]
+    },
+    {
+      "participantId": "p-002",
+      "role": "Purchasing Analyst",
+      "declaredProcessRole": "operator",
+      "quotes": [
+        {
+          "quoteId": "q-002",
+          "text": "In practice I send the spreadsheet directly to Finance, and Operations usually reviews it afterward."
+        },
+        {
+          "quoteId": "q-003",
+          "text": "When something is missing, I copy the row into another sheet and follow up manually."
+        }
+      ]
+    }
+  ]
+}
