@@ -1,0 +1,20 @@
+{
+  "process": "purchase approval",
+  "status": "design_reality_conflict",
+  "intendedProcess": {
+    "summary": "Operations approves purchases above $5,000 before Finance receives them.",
+    "supportingClaimIds": ["claim-001"]
+  },
+  "observedReality": {
+    "summary": "Finance often receives the spreadsheet first and Operations reviews it afterward.",
+    "supportingClaimIds": ["claim-002"]
+  },
+  "friction": [
+    {
+      "summary": "Missing information is tracked in a second spreadsheet with manual follow-up.",
+      "supportingClaimIds": ["claim-003"]
+    }
+  ],
+  "resolution": "preserve_conflict",
+  "reason": "The system has direct evidence for both the intended design and the observed execution. It should surface the disagreement rather than silently choosing one version."
+}
