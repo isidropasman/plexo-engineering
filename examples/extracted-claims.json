@@ -1,0 +1,40 @@
+{
+  "claims": [
+    {
+      "claimId": "claim-001",
+      "participantId": "p-001",
+      "type": "intended_process",
+      "processName": "purchase approval",
+      "text": "Operations should approve purchases above $5,000 before Finance receives them.",
+      "quoteIds": ["q-001"],
+      "relationshipToProcess": "process_owner",
+      "confidence": "high"
+    },
+    {
+      "claimId": "claim-002",
+      "participantId": "p-002",
+      "type": "actual_process",
+      "processName": "purchase approval",
+      "text": "The spreadsheet is sent directly to Finance and Operations often reviews it afterward.",
+      "quoteIds": ["q-002"],
+      "relationshipToProcess": "executor",
+      "confidence": "high"
+    },
+    {
+      "claimId": "claim-003",
+      "participantId": "p-002",
+      "type": "manual_work",
+      "processName": "purchase approval",
+      "text": "Missing information is tracked by copying rows into another spreadsheet and following up manually.",
+      "quoteIds": ["q-003"],
+      "relationshipToProcess": "executor",
+      "confidence": "high"
+    }
+  ],
+  "excludedClaims": [
+    {
+      "reason": "no_direct_quote",
+      "example": "Operations is probably the root cause of all purchasing delays."
+    }
+  ]
+}
