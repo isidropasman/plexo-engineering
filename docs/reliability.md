@@ -1,110 +1,151 @@
 # Reliability
 
-AI systems that interact with employees and reconstruct operations fail in more ways than “the model gave a bad answer.” Plexo treats reliability as a set of observable failure modes across evidence, reasoning, and voice interaction.
+Plexo has two very different reliability problems:
 
-## Evidence reliability
+1. **Epistemic reliability** — are operational conclusions actually supported by what people said?
+2. **Realtime reliability** — did the voice system behave correctly while collecting that evidence?
 
-The production extraction layer follows a strict principle:
+Treating both as “LLM quality” hides the useful engineering boundaries.
 
-> **No direct quote, no claim.**
+## 1. Evidence reliability
 
-An LLM can propose a claim, but code checks whether its cited evidence actually exists before the claim becomes part of the operational model.
+### No quote, no accepted claim
 
-The validator also guards against subtler failure modes.
+Extraction is probabilistic. Evidence existence is not.
+
+A proposed claim must resolve to evidence that exists. Structural failures are rejected in code rather than delegated to another model.
+
+The public example is in [`../src/evidence-pipeline/claim-validation.ts`](../src/evidence-pipeline/claim-validation.ts).
 
 ### Assent is not evidence
 
-A voice interviewer can accidentally introduce a conclusion and then ask for confirmation:
+Responses such as “yes”, “exactly”, or “correct” can confirm context conversationally without independently supporting a detailed operational claim. The validator treats assent-only evidence differently from substantive evidence.
 
-> “So approvals are the bottleneck, right?”
->
-> “Yes, exactly.”
+### Uncertainty should reduce certainty
 
-The participant's answer is a real utterance, but it does not independently contain the substance of the claim. Treating it as evidence would let the interviewer manufacture its own confirmation.
+Hearsay, vague language and explicit uncertainty should not become high-confidence observed reality. The production validation layer can reject weak cases or cap confidence rather than letting extraction output pass unchanged.
 
-Plexo therefore detects assent-only evidence and rejects claims that rely exclusively on it.
+### Source proximity matters
 
-### Weak sources are treated differently
+A participant describing work they execute every day is a different source from someone repeating what another team supposedly does. This is especially important for claims about actual execution.
 
-A specific first-hand example from someone doing the work is not equivalent to “I heard that this sometimes happens” from someone far from the process.
+## 2. Authority reliability
 
-Source metadata includes proximity to the work and relationship to the process. Reality claims backed only by weak, distant, hearsay evidence can be rejected rather than promoted into the company model.
+Correct evidence can still produce a bad company model if the wrong source dominates reconciliation.
 
-### Uncertainty changes confidence
-
-Language such as “I think,” “probably,” or “I'm not sure” is not discarded automatically. Depending on the claim, it can cap confidence or cause a quantified claim to be rejected when there is not enough context.
-
-The simplified public validator lives in [`claim-validation.ts`](../src/evidence-pipeline/claim-validation.ts).
-
-## Reasoning reliability
-
-### Preserve disagreement
-
-When two interviews disagree, forcing a single answer can be worse than returning uncertainty.
-
-Plexo explicitly distinguishes intended process from observed reality. If a process owner describes how purchasing should work and an operator gives direct evidence that execution differs, synthesis can preserve a design-vs-reality conflict.
-
-That conflict is itself valuable operational information.
-
-### Contextual authority
-
-Authority is not a property of a person's job title alone. A person can own one process and merely observe another.
-
-The system therefore derives relationship-to-process at a more local level and combines declared process roles with other signals instead of giving every statement from a senior participant the same weight.
-
-## Voice reliability
-
-Voice introduces a separate class of engineering problems: turn timing, interruption, silence, pause/resume behavior, audio truncation, state synchronization, and provider failures.
-
-The production project has a deterministic voice-eval layer built around observable traces rather than subjective “this conversation felt good” evaluation. Trace events can represent stage changes, checkpoints, UI/audio state, participant speech, and tool activity. The evaluator can then produce findings tied back to event indexes.
-
-Current classes of checks in the production system include:
-
-- pause/resume behavior,
-- sessions that remain silent after resume,
-- UI turn state changing before agent audio has actually finished,
-- truncated participant responses,
-- required questions being asked, answered, and recorded,
-- missing, early, duplicate, or unresolved checkpoints.
-
-The same evaluation idea can be used against a mock transport, a browser E2E session, or a real provider.
-
-## Provider failure strategy
-
-A production voice system should not assume that one external provider is permanently available. Plexo's reliability work includes designing the voice layer so provider-specific transport concerns are isolated from higher-level interview state, making fallback and recovery possible without rewriting the interview logic.
-
-The public repository intentionally keeps provider routing details out; the important architectural property is the separation between **interview state**, **observable trace**, and **transport/provider implementation**.
-
-## E2E evaluation
-
-The private codebase includes end-to-end evaluation that exercises the interview and downstream pipeline, plus browser-level voice runs that retain debugging artifacts such as traces, screenshots/video on failure, scorecards, and interview audits.
-
-This matters because many failures only emerge across boundaries:
+That is why authority is contextual:
 
 ```text
-question generation
-      ↓
-voice turn
-      ↓
-transcript
-      ↓
-claim extraction
-      ↓
-validation
-      ↓
-synthesis
+participant × process × claim relationship
 ```
 
-A unit test can prove each function works in isolation while the overall interview still loses an answer or produces a misleading report.
+rather than a single global rank.
+
+The production design evolved after an earlier seniority-oriented heuristic performed poorly against declared process ownership in an internal sample. See [`things-we-got-wrong.md`](things-we-got-wrong.md).
+
+## 3. Conflict reliability
+
+A reliable system should not manufacture consensus.
+
+If one source describes intended policy and another describes observed execution, both claims can remain valid artifacts with separate evidence. Synthesis can then surface the gap instead of averaging it away.
+
+This is a reliability property because silently resolving disagreement creates confident but unauditable company context.
+
+## 4. Voice reliability
+
+Voice systems fail on a temporal axis that text evals do not capture.
+
+A transcript can look fine while the experience was broken: the agent spoke too early, stayed muted after a pause, cut off the participant, or skipped a required checkpoint.
+
+The production project includes deterministic evaluation over voice traces for classes of failures including:
+
+- pause/resume behavior,
+- mute-after-resume,
+- `your_turn` emitted before participant audio actually ended,
+- truncated participant responses,
+- required-question/checkpoint issues,
+- timing and state-transition failures.
+
+### Why traces?
+
+A trace lets us ask concrete questions about sequence and timing:
+
+```text
+participant_audio_start
+participant_audio_end
+agent_turn_signal
+pause
+resume
+checkpoint
+...
+```
+
+When a failure is an invariant over those events, a deterministic evaluator is more useful than asking a model whether the conversation “felt natural.”
+
+## 5. Provider resilience
+
+Realtime voice introduces infrastructure dependency risk. During production client work, a failure involved both voice-detection/turn behavior and an upstream provider outage. Restoring the interview operation required debugging across those boundaries rather than assuming the prompt was the problem.
+
+A multi-provider fallback approach was subsequently implemented so a single provider failure would not stop the whole interview operation.
+
+This public repository intentionally keeps provider names, routing details and production configuration private. The engineering lesson is the boundary:
+
+```text
+Interview state
+      ↓
+provider adapter / routing boundary
+      ↓
+realtime provider
+```
+
+The interview state should not be conceptually owned by one provider.
+
+## 6. Deterministic checks vs semantic evals
+
+Not every quality question belongs in the same evaluator.
+
+| Question | Best boundary |
+|---|---|
+| Did the referenced quote exist? | deterministic code |
+| Did the session remain muted after resume? | deterministic trace check |
+| Was turn signaling temporally invalid? | deterministic trace check |
+| Did a required checkpoint happen? | deterministic state/trace check |
+| Is this quote genuinely evidence for the claim? | extraction + validation rules; semantic evaluation where needed |
+| Did synthesis capture the operational meaning correctly? | semantic/pipeline eval |
+
+The rule is simple: **make deterministic what can be deterministic.** Reserve model judgment for the questions that are actually semantic.
+
+## 7. E2E evaluation
+
+The production project also contains end-to-end checks around the pipeline and browser voice flow, including artifacts such as traces, video/screenshots and scorecards/audits.
+
+The goal is to test boundaries together:
+
+```text
+voice behavior
+→ interview state
+→ evidence
+→ claims
+→ synthesis
+→ operational output
+```
+
+Unit tests catch local regressions. E2E runs catch failures caused by the composition of individually reasonable components.
 
 ## Reliability philosophy
 
-The pattern across the system is consistent:
+We do not expect probabilistic systems to become deterministic.
 
-1. Make important state observable.
-2. Preserve provenance across agent boundaries.
-3. Convert subjective failure modes into explicit invariants where possible.
-4. Let probabilistic models propose; enforce hard product rules in code.
-5. Prefer an unresolved conflict over a confident unsupported conclusion.
+We try to put deterministic boundaries **around** them:
 
-That is the difference between a convincing AI demo and an AI system that can be trusted with operational knowledge.
+```text
+probabilistic generation
+        ↓
+observable artifacts
+        ↓
+deterministic invariants where possible
+        ↓
+semantic evaluation where necessary
+```
+
+That is the pattern behind evidence validation, voice traces, contextual authority and the broader context architecture.
