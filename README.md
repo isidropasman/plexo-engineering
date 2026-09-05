@@ -1,146 +1,248 @@
-# Plexo Engineering
+# Plexo — Engineering Deep Dive
 
-> How we turn messy human conversations into an evidence-backed model of how a company actually operates.
+> **Building a machine-readable model of how a company actually operates — from messy human conversations.**
 
-Plexo interviews people across a company and reconstructs processes, handoffs, bottlenecks, and the gap between **how work is supposed to happen** and **how it actually happens**.
+**Plexo is the product. The production codebase is private. This repository is my public technical case study of the architecture, failures, reliability systems, and selected sanitized implementations behind it.**
 
-The interesting engineering problem is not speech-to-text or prompting. It is making a probabilistic, multi-agent system produce operational conclusions that are **traceable, testable, and safe to disagree with**.
+Plexo interviews people across a company and reconstructs processes, handoffs, bottlenecks, ownership, and the gap between how work is supposed to happen and how it actually happens.
 
-This repository is a sanitized technical deep dive into the architecture behind Plexo. It is intentionally not the production codebase and contains no customer data, credentials, internal prompts, or deployment configuration.
+The interesting problem is not speech-to-text. It is not prompting. It is building a probabilistic system that can learn from many subjective sources without turning uncertainty into fake certainty.
 
-## The problem
+## The real product is context
 
-Ask ten people how the same process works and you may get ten partially correct answers.
+Voice is how Plexo collects operational knowledge today. Reports are one way we deliver it.
 
-One person knows the official design. Another knows the workaround everyone actually uses. Someone remembers a metric but is unsure. Someone else repeats something they heard from another team. A manager and an operator can both be telling the truth while apparently contradicting each other.
+The durable technical asset sits in between: an **evolving operational context** that can retain evidence, provenance, confidence, contextual authority, and disagreement.
 
-A useful system cannot just summarize all of that text.
+> **Context is not a prompt.** It is structured state that can be inspected, challenged, updated, and reused.
 
-It needs to answer:
-
-- **What exactly was claimed?**
-- **What evidence supports it?**
-- **How close is the source to the work?**
-- **Is this intended design or observed reality?**
-- **What happens when interviews disagree?**
-- **How confident should the system actually be?**
-
-## Architecture
+Instead of treating every interview as an isolated transcript, the system turns conversations into evidence-backed artifacts. New information can strengthen what we know, contradict it, extend the model, change who is authoritative for a specific process, or remain unresolved.
 
 ```mermaid
 flowchart LR
-    A[Voice interviews] --> B[Normalized quotes]
-    B --> C[Evidence extraction]
-    C --> D[Code validation]
-    D --> E[Typed claims]
-    E --> F[Contextual authority]
-    F --> G[Cross-interview synthesis]
-    G --> H[Operational model]
-    H --> I[Process gaps / bottlenecks / opportunities]
+    subgraph I[Interview Layer]
+      V[Voice interview]
+      S[Structured interview state]
+      V --> S
+    end
+
+    subgraph E[Evidence Layer]
+      Q[Normalized quotes]
+      X[Claim extraction]
+      G[Deterministic gates]
+      Q --> X --> G
+    end
+
+    subgraph C[Context Engine]
+      CL[Typed claims]
+      A[Contextual authority]
+      CF[Conflicts + uncertainty]
+      CL --> A --> CF
+    end
+
+    subgraph XS[Cross-Interview Synthesis]
+      SY[Consensus / disagreement]
+    end
+
+    subgraph O[Operational Model]
+      P[Processes]
+      B[Bottlenecks]
+      OP[Opportunities]
+    end
+
+    S --> Q
+    G --> CL
+    CF --> SY
+    SY --> P
+    SY --> B
+    SY --> OP
+    CF -. informs future investigation .-> S
+
+    R["Reliability + Evals\nvoice traces · E2E · deterministic checks"] -. observes .-> I
+    R -. observes .-> E
+    R -. observes .-> C
 ```
 
-The pipeline is deliberately multi-stage. Each stage produces typed artifacts that the next stage consumes.
+The feedback arrow matters more than the pipeline. The goal is not `interview → summary → report`. It is to build a representation that gets better as evidence accumulates.
 
-**The core rule: LLMs propose; code validates.**
+> **Current production foundation:** quote-backed claims, deterministic evidence validation, contextual authority, multi-stage synthesis, conflict preservation, structured interview state, voice traces and E2E evaluation.  
+> **Architectural direction:** increasingly use accumulated context, explicit unknowns and unresolved conflicts to decide what the system should investigate next.
 
-Read the full walkthrough in **[Architecture](docs/architecture.md)**.
+## How context evolves
 
-## Three hard problems
+Suppose one manager says the intended purchase-approval process takes 20 minutes. An operator says the real process regularly takes two hours because approvals bounce between teams.
 
-### 1. Preventing the system from manufacturing evidence
+A naive system has three bad options: choose the manager, choose the operator, or average the answers.
 
-A claim only enters the model if it can point to valid source evidence.
-
-The production validator handles cases such as missing quotes, vague evidence, uncertain metrics, weak hearsay, and even **assent-only answers** where the interviewer introduced the substance and the participant merely said “yes, exactly.”
-
-A small public version is here:
-
-[`src/evidence-pipeline/claim-validation.ts`](src/evidence-pipeline/claim-validation.ts)
-
-### 2. Knowing who is authoritative about what
-
-Authority is contextual.
-
-A Finance Manager might own invoicing, execute part of budgeting, and only observe logistics. Assigning one authority score to that person would contaminate every downstream conclusion.
-
-Plexo derives authority at the participant/process/claim level using signals such as declared process role, seniority, proximity to work, and claim type.
-
-See the sanitized implementation:
-
-[`src/evidence-pipeline/authority.ts`](src/evidence-pipeline/authority.ts)
-
-### 3. Preserving disagreement instead of averaging it away
-
-Suppose a process owner says:
-
-> Purchases above $5,000 are approved by Operations before Finance receives them.
-
-But the analyst doing the work says:
-
-> In practice I send the spreadsheet directly to Finance, and Operations reviews it afterward.
-
-The wrong system picks one story or writes a vague average.
-
-Plexo can preserve both as a **design ↔ reality conflict**, with provenance for each side.
-
-Walk through the synthetic artifacts:
-
-[`interview-input.json`](examples/interview-input.json) → [`extracted-claims.json`](examples/extracted-claims.json) → [`synthesized-output.json`](examples/synthesized-output.json)
-
-## Reliability beyond the LLM
-
-Voice systems add another failure surface: turn timing, silence, interruptions, pause/resume state, truncated answers, provider outages, and UI/audio synchronization.
-
-The production project uses observable traces and deterministic voice evals for failure modes that should not be judged “by vibes.” It also has end-to-end evaluation across the interview and downstream pipeline.
-
-Read **[Reliability](docs/reliability.md)** for the deeper breakdown.
-
-## Design principles
-
-| Principle | Why |
-| --- | --- |
-| **No evidence → no claim** | Prevent unsupported conclusions from entering the company model. |
-| **Typed artifacts between agents** | Make every stage inspectable and independently testable. |
-| **Intended ≠ actual** | Organizational contradictions often contain the most valuable information. |
-| **Authority is contextual** | Job title alone does not tell you who knows a process. |
-| **Deterministic gates around probabilistic models** | Put hard product invariants in code, not another prompt. |
-| **Preserve uncertainty** | An unresolved conflict is safer than false certainty. |
-| **Observable voice state** | Reliability requires traces, not anecdotes. |
-
-## Repository map
+Plexo's model can preserve both claims with their evidence and relationship to the process:
 
 ```text
-.
-├── README.md
-├── docs/
-│   ├── architecture.md
-│   └── reliability.md
-├── examples/
-│   ├── interview-input.json
-│   ├── extracted-claims.json
-│   └── synthesized-output.json
-└── src/
-    └── evidence-pipeline/
-        ├── types.ts
-        ├── claim-validation.ts
-        └── authority.ts
+Purchase approval
+├── intended
+│   └── "Manager approval should happen in ~20 min"
+│       └── quote → interview → participant
+│
+└── observed
+    └── "In practice it often takes ~2 h"
+        └── quote → interview → participant
+
+Result: disagreement preserved, not averaged away.
 ```
 
-## What I worked on
+When new evidence arrives, the useful outcomes are:
 
-My role on Plexo spans product/system design, technical implementation, and GTM. On the engineering side, areas I have personally worked on include:
+| New evidence | Context behavior |
+|---|---|
+| Supports an existing claim | strengthen its evidence |
+| Disagrees with a claim | preserve a conflict |
+| Reveals something new | extend the model |
+| Comes from a better source for that process | reconsider contextual authority |
+| Is weak or ambiguous | retain uncertainty instead of manufacturing certainty |
 
-- debugging production voice-agent failures and restoring interviews under time pressure,
-- designing a multi-provider fallback approach for the voice layer,
-- shaping the evidence-backed process reconstruction architecture,
-- working on the system decisions behind how interviews become structured operational knowledge.
+See the synthetic end-to-end example in [`examples/context-update.json`](examples/context-update.json) and the deeper model in [`docs/context-engine.md`](docs/context-engine.md).
 
-I keep this repository focused on the technical decisions I can explain and defend rather than publishing a large production code dump.
+## Context has layers
 
-## Why this matters
+The model is easier to reason about when context is not one giant blob:
 
-The long-term goal is larger than generating a process report.
+```text
+Raw evidence
+    ↓
+Atomic claims + provenance
+    ↓
+People · roles · processes · tools
+    ↓
+Relationships + contextual authority
+    ↓
+Conflicts + uncertainty
+    ↓
+Operational conclusions
+```
 
-If AI agents are eventually going to execute meaningful operational work, they first need a reliable representation of **how the company works, who owns what, where reality differs from design, and what evidence supports that model**.
+A conclusion should be able to travel backwards:
 
-Plexo is an attempt to build that layer.
+`Conclusion → Claim → Quote → Interview → Participant`
+
+That property is why we prefer claims over transcript summaries. A summary is convenient for reading; it is a weak primitive for a system that needs to update and defend what it believes.
+
+## Hard engineering decisions
+
+The stack is not the interesting part. These decisions are.
+
+| Decision | Why | Trade-off |
+|---|---|---|
+| [Bounded stages, not one giant agent](docs/decisions/001-multi-agent-boundaries.md) | Different stages fail differently and need independent evaluation | More contracts and orchestration |
+| [Claims, not summaries](docs/decisions/002-claims-not-summaries.md) | Preserve provenance and make knowledge composable | More structured state |
+| [LLMs propose; code validates](docs/decisions/003-llm-proposes-code-validates.md) | Deterministic invariants should not depend on another probabilistic call | Some useful weak evidence gets rejected |
+| [Authority is contextual](docs/decisions/004-contextual-authority.md) | Job title is not a reliable proxy for who knows how a process actually runs | Authority becomes process- and claim-dependent |
+| [Contradictions are data](docs/decisions/005-preserve-conflicts.md) | Intended and observed reality can both matter | Downstream synthesis must reason over disagreement |
+| [Structured, scoped context](docs/decisions/006-structured-scoped-context.md) | Context should be selected, not dumped into a prompt | Requires explicit context boundaries |
+| [Unknowns are first-class](docs/decisions/007-unknowns-first-class.md) | What we do not know can determine what to investigate next | Architectural direction; requires careful state design |
+
+## One rule that changed the architecture
+
+### LLMs propose. Code validates.
+
+An extraction model may propose a perfectly plausible operational claim that nobody actually supported.
+
+So evidence invariants live outside the model where possible. The sanitized validator in [`src/evidence-pipeline/claim-validation.ts`](src/evidence-pipeline/claim-validation.ts) demonstrates the production principle: resolve quote IDs, reject unsupported claims, detect assent-only evidence, treat hearsay/uncertainty differently, and calibrate confidence.
+
+```text
+Transcript
+   ↓
+LLM proposes typed claims
+   ↓
+Deterministic evidence gates
+   ↓
+Accepted / rejected / confidence-adjusted claims
+```
+
+**No evidence → no accepted claim.**
+
+## Things we got wrong
+
+One of the best architecture changes came from measuring a bad assumption.
+
+We initially leaned too heavily on **seniority as a proxy for process authority**. An internal comparison documented in the production code showed the heuristic agreeing with declared process ownership only about **66%** of the time in that sample, with the failure pattern concentrated in missing real owners.
+
+The fix was not a better title mapping. We changed the model: authority is derived in the context of **participant × process × claim**, and declared process roles can override the weak seniority proxy.
+
+That matters because perfect extraction with the wrong authority model still corrupts company context.
+
+[Read the failure story →](docs/things-we-got-wrong.md)
+
+## Voice reliability is a systems problem
+
+A voice agent can produce great text and still fail as a product.
+
+We built deterministic trace checks around failure modes that text-only evals miss:
+
+- pause / resume that leaves a session muted,
+- turn signals emitted before audio actually ends,
+- truncated participant responses,
+- missing required questions or checkpoints,
+- timing/state-machine failures,
+- provider failure and fallback behavior.
+
+The point is not to ask an LLM whether an interview “felt good.” When a failure can be expressed as an invariant over a trace, we test the invariant.
+
+[Read the reliability deep dive →](docs/reliability.md)
+
+## Selected sanitized implementation
+
+This is intentionally small. I would rather expose three readable ideas than dump a private production system into a public repository.
+
+```text
+src/evidence-pipeline/
+├── types.ts              # quote, source and claim contracts
+├── claim-validation.ts   # deterministic evidence gates
+└── authority.ts          # process-aware authority derivation
+
+examples/
+├── interview-input.json
+├── extracted-claims.json
+├── synthesized-output.json
+└── context-update.json
+```
+
+Start with [`claim-validation.ts`](src/evidence-pipeline/claim-validation.ts), then [`authority.ts`](src/evidence-pipeline/authority.ts).
+
+## What I personally worked on
+
+Plexo is a team project. These are areas I can personally defend in detail:
+
+- **Production voice debugging.** During live client work, I traced a voice failure across VAD/turn behavior and a provider outage and helped restore the interview flow under time pressure.
+- **Voice resilience.** I designed and implemented a fallback approach across multiple voice providers so one provider failure would not stop the interview operation.
+- **Evidence-backed reconstruction.** I worked on the architecture that turns interviews into structured operational knowledge rather than treating transcripts as the final artifact.
+- **Context as a system primitive.** I pushed the design toward typed evidence, provenance, contradictions and process-specific authority so downstream agents can reason over a defensible company model.
+
+The most interesting parts of Plexo came from the places where the obvious implementation stopped working.
+
+## Where this goes
+
+The long-term problem is bigger than process mapping.
+
+Before an AI agent can reliably execute work inside a company, it needs a trustworthy representation of:
+
+- what the process actually is,
+- who owns and executes each part,
+- which rules and exceptions matter,
+- where sources disagree,
+- what is still unknown,
+- and what evidence supports each conclusion.
+
+That is the layer we are trying to build.
+
+```text
+Human knowledge → Evidence → Operational context → Decisions → Agents
+                         ↑                         |
+                         └────── new evidence ─────┘
+```
+
+---
+
+### Go deeper
+
+[`Context Engine`](docs/context-engine.md) · [`Architecture`](docs/architecture.md) · [`Decisions`](docs/decisions/001-multi-agent-boundaries.md) · [`Reliability`](docs/reliability.md) · [`Things we got wrong`](docs/things-we-got-wrong.md)
+
+> This repository contains synthetic examples and sanitized technical material only. It contains no customer data, credentials, internal prompts, or deployment configuration.
