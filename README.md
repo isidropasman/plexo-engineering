@@ -16,12 +16,12 @@ The interesting problem is not speech-to-text. It is not prompting. It is buildi
 
 Voice is how Plexo collects operational knowledge today. Reports are one way we deliver it.
 
-The durable technical asset sits in between: an **evolving operational context** that can retain evidence, provenance, confidence, contextual authority, and disagreement.
+The durable technical asset sits in between: structured operational context that retains evidence, provenance, confidence, contextual authority, and disagreement.
 
 > ### 🟣 Context is not a prompt.
-> It is structured state that can be inspected, challenged, updated, and reused.
+> It is structured state that can be inspected, challenged, and reused.
 
-Instead of treating every interview as an isolated transcript, the system turns conversations into evidence-backed artifacts. New information can strengthen what we know, contradict it, extend the model, change who is authoritative for a specific process, or remain unresolved.
+Today, interviews are turned into evidence-backed artifacts that can be synthesized across participants while preserving disagreement and source quality. The architectural direction is to make that context increasingly cumulative: new evidence should be able to strengthen, contradict, extend, or leave parts of the model unresolved rather than forcing a fresh summary every time.
 
 ### System architecture
 
@@ -63,7 +63,7 @@ flowchart LR
     SY --> P
     SY --> B
     SY --> OP
-    CF -. informs future investigation .-> S
+    CF -. future direction: investigate unknowns .-> S
 
     R["Reliability + Evals\nvoice traces · E2E · deterministic checks"] -. observes .-> I
     R -. observes .-> E
@@ -84,7 +84,7 @@ flowchart LR
     class R reliability;
 ```
 
-The feedback arrow matters more than the pipeline. The goal is not `interview → summary → report`. It is to build a representation that gets better as evidence accumulates.
+The current production foundation is more than `interview → summary → report`: evidence survives as structured artifacts through extraction and synthesis. The feedback loop shown above is the next step — using accumulated context and unresolved questions to influence what the system investigates next.
 
 ![Production Backed](https://img.shields.io/badge/PRODUCTION--BACKED-1F883D?style=flat-square) **Current foundation:** quote-backed claims, deterministic evidence validation, contextual authority, multi-stage synthesis, conflict preservation, structured interview state, voice traces and E2E evaluation.
 
@@ -113,7 +113,7 @@ Suppose one manager says the intended purchase-approval process takes 20 minutes
 
 A naive system has three bad options: choose the manager, choose the operator, or average the answers.
 
-Plexo's model can preserve both claims with their evidence and relationship to the process:
+Plexo's current evidence model can preserve both claims with their evidence and relationship to the process:
 
 ```text
 Purchase approval
@@ -128,15 +128,17 @@ Purchase approval
 Result: disagreement preserved, not averaged away.
 ```
 
-When new evidence arrives, the useful outcomes are:
+For cumulative context, the target behavior as new evidence arrives is:
 
-| New evidence | Context behavior |
+| New evidence | Desired context behavior |
 |---|---|
 | ✅ Supports an existing claim | strengthen its evidence |
 | ⚡ Disagrees with a claim | preserve a conflict |
 | ➕ Reveals something new | extend the model |
 | 🎯 Comes from a better source for that process | reconsider contextual authority |
 | ? Is weak or ambiguous | retain uncertainty instead of manufacturing certainty |
+
+The first three ideas are already reflected in the production evidence/synthesis foundation; cumulative authority updates and investigation driven by explicit unknowns are architectural direction.
 
 See the synthetic end-to-end example in [`examples/context-update.json`](examples/context-update.json) and the deeper model in [`docs/context-engine.md`](docs/context-engine.md).
 
@@ -162,7 +164,7 @@ A conclusion should be able to travel backwards:
 
 `Conclusion → Claim → Quote → Interview → Participant`
 
-That property is why we prefer claims over transcript summaries. A summary is convenient for reading; it is a weak primitive for a system that needs to update and defend what it believes.
+That property is why we prefer claims over transcript summaries. A summary is convenient for reading; it is a weak primitive for a system that needs to defend what it believes.
 
 ## 🧠 Hard engineering decisions
 
